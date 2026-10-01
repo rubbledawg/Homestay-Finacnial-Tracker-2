@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Partner } from '../types';
+import { PartnerBalances } from './PartnerBalances';
+import React, { useState, useEffect } from 'react';
+import { Partner, MonthCalculations } from '../types';
 import { generateId, formatPHP } from '../utils/formatters';
 import { Users, Plus, Trash2, Scale, AlertCircle, CheckCircle2, X } from 'lucide-react';
 
@@ -11,6 +12,7 @@ interface PartnersModalProps {
   currentNetProfit: number;
   annualNetProfit: number;
   activeMonthName: string;
+  balances?: MonthCalculations;
 }
 
 export const PartnersModal: React.FC<PartnersModalProps> = ({
@@ -21,6 +23,7 @@ export const PartnersModal: React.FC<PartnersModalProps> = ({
   currentNetProfit,
   annualNetProfit,
   activeMonthName,
+  balances,
 }) => {
   const [localPartners, setLocalPartners] = useState<Partner[]>(() => {
     return partners && partners.length > 0
@@ -33,6 +36,7 @@ export const PartnersModal: React.FC<PartnersModalProps> = ({
 
   const [previewMode, setPreviewMode] = useState<'month' | 'year'>('month');
 
+  useEffect(() => { if (isOpen) setLocalPartners(partners); }, [isOpen, partners]);
   if (!isOpen) return null;
 
   const totalShare = localPartners.reduce(
@@ -92,6 +96,7 @@ export const PartnersModal: React.FC<PartnersModalProps> = ({
   };
 
   const handleSave = () => {
+    if (localPartners.some(p => !p.name.trim()) || new Set(localPartners.map(p=>p.name.trim().toLowerCase())).size !== localPartners.length) { alert('Use a unique, non-empty name for each partner.'); return; }
     onSavePartners(localPartners);
     onClose();
   };
@@ -106,6 +111,7 @@ export const PartnersModal: React.FC<PartnersModalProps> = ({
       }}
     >
       <div className="bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl max-w-xl w-full flex flex-col max-h-[90vh] overflow-hidden">
+        {balances && <PartnerBalances calculations={balances} partners={partners} />}
         {/* Modal Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800 bg-neutral-950/70">
           <div className="flex items-center gap-2.5">

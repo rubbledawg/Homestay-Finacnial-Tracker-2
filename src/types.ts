@@ -21,7 +21,7 @@ export interface BookingItem {
   notes: string;
 }
 
-export type TransactionType = 'Income' | 'Expense';
+export type TransactionType = 'Income' | 'Expense' | 'Partner Advance' | 'Partner Reimbursement' | 'Capital Contribution';
 
 export type LedgerCategory =
   // Income categories
@@ -64,6 +64,13 @@ export interface MergedLedgerItem {
   outflow: number | ''; // Expense amount (₱)
   notes: string;
   paidBy?: string; // e.g. 'Property Funds' or Partner Name
+  partnerId?: string; // Stable identity survives partner renames
+  fundingSource?: 'business' | 'partner';
+  fundingIntent?: 'repayable' | 'capital';
+  accountingVersion?: number;
+  reviewReason?: string;
+  legacySettlementReviewed?: boolean;
+  legacyAccounting?: Record<string, unknown>;
   isReimbursable?: boolean; // true if partner paid out-of-pocket
   reimbursementStatus?: 'Pending' | 'Settled';
   settlementDate?: string;
@@ -75,8 +82,11 @@ export interface PartnerReimbursementBalance {
   totalPaid: number;
   pendingAmount: number;
   settledAmount: number;
+  expensesFunded?: number;
+  cashAdvanced?: number;
+  reimbursements?: number;
   fairSharePending?: number;
-  netPendingBalance?: number; // > 0 to receive from partners, < 0 owes other partners
+  netPendingBalance?: number; // Legacy compatibility field; business debt to the funding partner
 }
 
 export interface MonthData {
@@ -85,6 +95,8 @@ export interface MonthData {
   shortName: string; // 'Jan', 'Feb', ...
   year: number;
   initialBalanceOverride?: number; // Only for first month if user wants custom starting capital
+  openingCashIsManual?: boolean;
+  openingPartnerBalances?: Record<string, number>;
   bookings: BookingItem[];
   ledger: MergedLedgerItem[];
   // Backwards compatibility fallbacks
@@ -112,13 +124,22 @@ export interface MonthCalculations {
   totalCalculatedOutflow: number; // Total Outflow in ledger (Opening deficit if < 0 + monthly expenses)
   monthlyNetProfit: number; // Monthly Net P&L (Monthly Inflow - Monthly Expenses)
   netProfit: number; // Monthly Net Profit / Loss
-  endingBalance: number; // Total Cash Balance (Beginning Balance + Monthly Net P&L)
+  endingBalance: number; // Actual business cash: beginning cash + cash received - cash paid
   profitMargin: number; // Monthly operating margin %
   totalNights: number;
   totalReimbursables: number; // Out-of-pocket expenses paid by partners
   totalPendingReimbursements: number; // Reimbursables not yet settled
   totalSettledReimbursements: number; // Reimbursables already settled
   partnerBalances?: Record<string, PartnerReimbursementBalance>;
+  businessPaidExpenses: number;
+  partnerPaidExpenses: number;
+  partnerAdvances: number;
+  partnerReimbursements: number;
+  capitalContributions: number;
+  cashInflow: number;
+  cashOutflow: number;
+  totalDueToPartners: number;
+  reviewItems: { id: string; reason: string; label?: string }[];
 }
 
 export interface TabConfig {

@@ -1,7 +1,8 @@
+import { migrateLedger } from './accounting';
 import { cloudStore as localStorage } from '../lib/cloudStore';
 import { MonthData, Partner, BusinessTracker } from '../types';
-import { createEmptyMonths } from './calculations';
-import { VERIFIED_JULY_2026_EXPENSES } from '../data/initialExpenses';
+import { createEmptyMonths, calculateAllMonths } from './calculations';
+
 
 export const STORAGE_KEY_BUSINESSES = 'airbnb_businesses_list_v2';
 export const STORAGE_KEY_DELETED_BIZ = 'airbnb_deleted_business_ids_v2';
@@ -88,7 +89,7 @@ export function calculateDataScore(months: MonthData[]): number {
 
 /**
  * Safely parses and normalizes month data structure without injecting any random or mock expenses.
- * Encodes verified July statement exclusively in WAJ FINANCES, and strictly purges it from any other tracker.
+ * Preserves all supplied records and adds accounting classifications without changing amounts.
  */
 export function normalizeMonthData(rawMonths: any[], bizId?: string): MonthData[] {
   if (!Array.isArray(rawMonths)) return [];
@@ -96,12 +97,13 @@ export function normalizeMonthData(rawMonths: any[], bizId?: string): MonthData[
     const ledger = Array.isArray(m.ledger) ? m.ledger.filter(Boolean) : [];
 
     const cleanMonth: MonthData = {
+      ...m,
       id: m.id,
       name: m.name,
       shortName: m.shortName,
       year: m.year,
       bookings: Array.isArray(m.bookings) ? m.bookings : [],
-      ledger,
+      ledger: migrateLedger(ledger, bizId ? recoverPartnersData(bizId) : []),
     };
 
     if (
@@ -118,7 +120,7 @@ export function normalizeMonthData(rawMonths: any[], bizId?: string): MonthData[
 
 /**
  * Recovers months data for a specific business without cross-contaminating from other businesses.
- * Encodes verified statement in WAJ FINANCES ONLY.
+ * Does not inject or remove historical statement rows.
  */
 export function recoverMonthsData(bizId: string, yr: number): MonthData[] {
   const raw = localStorage.getItem(`${STORAGE_KEY_DATA}_${bizId}_${yr}`);
@@ -373,4 +375,21 @@ export function importFullFinancialBackup(jsonString: string): {
       message: `Failed to import backup: ${err?.message || String(err)}`,
     };
   }
+}
+
+/** Recompute earlier saved years before the selected year; cash and partner debt cross December independently. */
+export function calculateBusinessYear(bizId:string,year:number,months:MonthData[],partners:Partner[]) {
+  const years=new Set<number>();
+  for(let i=0;i<localStorage.length;i++) {
+    const key=localStorage.key(i) || '';
+    const prefix=STORAGE_KEY_DATA+'_'+bizId+'_';
+    if(key.startsWith(prefix)) { const y=Number(key.slice(prefix.length));if(Number.isInteger(y)&&y<year)years.add(y); }
+  }
+  let cash=0,balances={};
+  const carried=(list:MonthData[])=>list.map((m,i)=>i===0&&!m.openingCashIsManual&&m.initialBalanceOverride===0?{...m,initialBalanceOverride:undefined}:m);
+  for(const y of [...years].sort((a,b)=>a-b)) {
+    const result=calculateAllMonths(carried(recoverMonthsData(bizId,y)),cash,partners,balances);
+    const last=result.dec;if(last){cash=last.endingBalance;balances=last.partnerBalances || {};}
+  }
+  return calculateAllMonths(years.size?carried(months):months,cash,partners,balances);
 }

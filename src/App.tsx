@@ -19,6 +19,8 @@ import { TabBar } from './components/TabBar';
 import { MonthlySummaryBar } from './components/MonthlySummaryBar';
 import { BookingsTable } from './components/BookingsTable';
 import { MergedLedgerTable } from './components/MergedLedgerTable';
+import { PartnerBalances } from './components/PartnerBalances';
+import { isPartnerExpense } from './utils/accounting';
 import { PreFundingTable } from './components/PreFundingTable';
 import { ReimbursablesLedgerTable } from './components/ReimbursablesLedgerTable';
 import { AnnualOverviewTable } from './components/AnnualOverviewTable';
@@ -29,12 +31,13 @@ import { BackupModal } from './components/BackupModal';
 import { BedDouble, Receipt, Layers, Coins, Landmark, Cloud, AlertCircle, X, LogIn } from 'lucide-react';
 import { BusinessTracker } from './types';
 import {
+  calculateBusinessYear,
   recoverMonthsData,
   recoverPartnersData,
   recoverBusinesses,
   calculateDataScore,
   normalizeMonthData,
-  isWajBusiness,
+
   STORAGE_KEY_BUSINESSES,
   STORAGE_KEY_DELETED_BIZ,
   STORAGE_KEY_ACTIVE_BIZ,
@@ -44,7 +47,7 @@ import {
   DEFAULT_PARTNERS,
   DEFAULT_BUSINESSES,
 } from './utils/dataRecovery';
-import { VERIFIED_JULY_2026_EXPENSES } from './data/initialExpenses';
+
 
 export default function App() {
   const currentYear = new Date().getFullYear();
@@ -272,7 +275,7 @@ export default function App() {
   const [activeTabId, setActiveTabId] = useState<string>('jul');
   const [tableDisplayMode, setTableDisplayMode] = useState<
     'all' | 'bookings' | 'ledger' | 'prefunding' | 'reimbursables'
-  >('all');
+  >('ledger');
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccessMsg, setExportSuccessMsg] = useState<string | null>(null);
 
@@ -286,9 +289,8 @@ export default function App() {
 
   // Run automated calculations with sequential monthly carryovers
   const calculations = useMemo(() => {
-    const janInitialCapital = monthsData.find((m) => m.id === 'jan')?.initialBalanceOverride ?? 0;
-    return calculateAllMonths(monthsData, janInitialCapital, partners);
-  }, [monthsData, partners]);
+    return calculateBusinessYear(activeBusinessId, year, monthsData, partners);
+  }, [monthsData, partners, activeBusinessId, year]);
 
   const annualNetProfit = useMemo(() => {
     return (Object.values(calculations) as MonthCalculations[]).reduce(
@@ -315,12 +317,7 @@ export default function App() {
   // Active month reimbursable expenses count
   const currentMonthReimbursablesCount = useMemo(() => {
     if (!currentMonthData?.ledger) return 0;
-    return currentMonthData.ledger.filter((item) => {
-      const isExp = item.type === 'Expense' || (item.outflow !== '' && Number(item.outflow) > 0);
-      const isMarked = item.isReimbursable === true;
-      const hasPartner = item.paidBy && item.paidBy !== 'Property Funds' && item.paidBy !== 'Property Fund';
-      return isExp && (isMarked || Boolean(hasPartner));
-    }).length;
+    return currentMonthData.ledger.filter(isPartnerExpense).length;
   }, [currentMonthData?.ledger]);
 
   // Active month pre-funding capital injections count
@@ -344,34 +341,22 @@ export default function App() {
     );
   };
 
-  const handleEncodeJulyStatement = () => {
-    if (!isWajBusiness(activeBusinessId)) return;
-    setMonthsData((prev) =>
-      prev.map((m) => {
-        if (m.id === 'jul') {
-          return {
-            ...m,
-            ledger: [...VERIFIED_JULY_2026_EXPENSES],
-          };
-        }
-        return m;
-      })
-    );
-  };
-
   const handleAddPreFunding = () => {
     if (!currentMonthData) return;
-    const defaultPartner = partners && partners.length > 0 ? 'All Owners (Split by Equity)' : 'All Owners';
+    const defaultPartner = partners[0]?.name || 'Unassigned partner';
     const newItem: MergedLedgerItem = {
       id: generateId(),
       date: new Date().toISOString().slice(0, 10),
-      type: 'Income',
-      description: 'Owner Working Capital Pre-Funding',
-      category: 'Pre-Funding / Injected Funds',
+      type: 'Partner Advance',
+      description: 'Partner cash advance',
+      category: 'Partner Advance',
       receiptNo: '',
       inflow: '',
       outflow: '',
-      notes: 'Working capital injection for property operations',
+      notes: '',
+      partnerId: partners[0]?.id,
+      fundingIntent: 'repayable',
+      accountingVersion: 2,
       paidBy: defaultPartner,
     };
     handleUpdateLedger([...(currentMonthData.ledger || []), newItem]);
@@ -380,7 +365,7 @@ export default function App() {
 
   const handleUpdateInitialCapital = (val: number) => {
     setMonthsData((prev) =>
-      prev.map((m) => (m.id === 'jan' ? { ...m, initialBalanceOverride: val } : m))
+      prev.map((m) => (m.id === 'jan' ? { ...m, initialBalanceOverride: val, openingCashIsManual: true } : m))
     );
   };
 
@@ -429,7 +414,7 @@ export default function App() {
       {/* Main Workspace */}
       <main className="ledger-workspace flex-1 w-full mx-auto flex flex-col">
         <div className="workspace-heading">
-          <div><p className="eyebrow">PROPERTY FINANCES</p><h1>{businesses.find(b => b.id === activeBusinessId)?.name || 'Your ledger'}</h1><p className="workspace-subtitle">Income, expenses and bookings in one place.</p></div>
+          <div><p className="eyebrow">PROPERTY FINANCES</p><h1>{businesses.find(b => b.id === activeBusinessId)?.name || 'Your ledger'}</h1><p className="workspace-subtitle">Business cash, operating profit and partner funding in one place.</p></div>
           <div className="period-label"><span>{activeTabId === 'overview' ? 'Annual overview' : currentMonthData?.name}</span><strong>{year}</strong></div>
         </div>
         {/* Month navigation */}
@@ -464,12 +449,14 @@ export default function App() {
                 nextMonthName={nextMonthName}
                 calculations={calculations[currentMonthData.id]}
                 isFirstMonth={currentMonthData.id === 'jan'}
-                initialBalanceOverride={currentMonthData.initialBalanceOverride}
+                initialBalanceOverride={calculations[currentMonthData.id]?.beginningBalance}
                 onUpdateInitialBalance={handleUpdateInitialCapital}
                 onAddPreFunding={handleAddPreFunding}
                 partners={partners}
                 onOpenPartnersModal={() => setIsPartnersModalOpen(true)}
               />
+
+              <PartnerBalances calculations={calculations[currentMonthData.id]} partners={partners} onEdit={() => setIsPartnersModalOpen(true)} />
 
               {/* View layout selector for tables */}
               <div className="ledger-view-selector flex flex-wrap items-center justify-between gap-2 mb-2 px-1">
@@ -527,7 +514,7 @@ export default function App() {
                       }`}
                     >
                       <Landmark className="w-3 h-3 text-cyan-400" />
-                      <span>Pre-Funding ({currentMonthPreFundingCount})</span>
+                      <span>Partner funding ({currentMonthPreFundingCount})</span>
                       {calculations[currentMonthData.id]?.totalPreFunding > 0 && (
                         <span className="px-1.5 py-0.2 rounded bg-cyan-950/90 border border-cyan-700/80 text-[10px] text-cyan-300 font-mono-numbers font-medium">
                           {formatPHP(calculations[currentMonthData.id].totalPreFunding)}
@@ -583,6 +570,7 @@ export default function App() {
               {/* 2. Separate Bookings Table */}
               {(tableDisplayMode === 'all' || tableDisplayMode === 'bookings') && (
                 <BookingsTable
+                  year={year}
                   monthId={currentMonthData.id}
                   items={currentMonthData.bookings || []}
                   allYearBookings={allYearBookings}
@@ -596,6 +584,8 @@ export default function App() {
                 <PreFundingTable
                   monthId={currentMonthData.id}
                   monthName={currentMonthData.name}
+                  beginningBalance={calculations[currentMonthData.id]?.beginningBalance ?? 0}
+                  year={year}
                   items={currentMonthData.ledger || []}
                   partners={partners}
                   onChange={handleUpdateLedger}
@@ -608,6 +598,8 @@ export default function App() {
                 <ReimbursablesLedgerTable
                   monthId={currentMonthData.id}
                   monthName={currentMonthData.name}
+                  beginningBalance={calculations[currentMonthData.id]?.beginningBalance ?? 0}
+                  year={year}
                   items={currentMonthData.ledger || []}
                   partners={partners}
                   onChange={handleUpdateLedger}
@@ -648,6 +640,7 @@ export default function App() {
         currentNetProfit={currentMonthData ? calculations[currentMonthData.id]?.netProfit || 0 : 0}
         annualNetProfit={annualNetProfit}
         activeMonthName={currentMonthData?.name || 'Selected Month'}
+        balances={currentMonthData ? calculations[currentMonthData.id] : calculations.dec}
       />
 
       {/* Export Configuration & Multi-Month Selector Modal */}

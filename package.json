@@ -4,12 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev": "vite --port=3000 --host=127.0.0.1",
     "build": "node build-local.mjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "node --import ./tests/typescript-loader.mjs --experimental-test-isolation=none --test tests/*.test.ts"
+    "test": "node --import ./tests/typescript-loader.mjs --experimental-test-isolation=none --test tests/*.test.ts tests/*.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

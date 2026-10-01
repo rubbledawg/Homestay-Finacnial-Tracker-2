@@ -23,10 +23,10 @@ async function storeImages(value, bucket, owner) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
     const owner = request.headers.get('oai-authenticated-user-id');
     const email = request.headers.get('oai-authenticated-user-email');
     if (!owner || email?.toLowerCase() !== allowedEmail) return reply({ error: 'Sign in with the owner account.' }, 403);
+    if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
     try {
       if (url.pathname.startsWith('/api/files/') && request.method === 'GET') {
         const hash = url.pathname.split('/').pop();
@@ -34,6 +34,10 @@ export default {
         const object = await env.BUCKET.get(`${owner}/${hash}`);
         if (!object) return reply({ error: 'Not found' }, 404);
         return new Response(object.body, { headers: { 'Content-Type': object.httpMetadata.contentType, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox" } });
+      }
+      if (url.pathname === '/api/backup' && request.method === 'GET') {
+        const row = await env.DB.prepare('SELECT revision, payload, updated FROM ledger WHERE owner = ?').bind(owner).first();
+        return reply(row ? { revision: row.revision, values: JSON.parse(row.payload), updated: row.updated } : {revision:0,values:{}});
       }
       if (url.pathname !== '/api/ledger') return reply({ error: 'Not found' }, 404);
       if (request.method === 'GET') {
@@ -46,6 +50,12 @@ export default {
       if (raw.length > 20 * 1024 * 1024) return reply({ error: 'Save is too large. Reduce receipt image sizes.' }, 413);
       const { revision, values } = JSON.parse(raw);
       if (!Number.isSafeInteger(revision) || revision < 0 || !values || Array.isArray(values) || typeof values !== 'object') return reply({ error: 'Invalid ledger' }, 400);
+      const previous = await env.DB.prepare('SELECT revision, payload, updated FROM ledger WHERE owner = ?').bind(owner).first();
+      if (previous && previous.revision !== revision) return reply({ error: 'Another window saved newer records. Preserve your draft and load latest.' }, 409);
+      const previousValues = previous ? JSON.parse(previous.payload) : {};
+      if (previousValues.airbnb_accounting_version === '2' && values.airbnb_accounting_version !== '2') return reply({ error: 'This window uses an older accounting version. Reload before saving.' }, 409);
+      // Snapshot first; if preservation fails, no original ledger is changed.
+      if (previous) await env.DB.prepare('INSERT OR IGNORE INTO ledger_snapshots (owner, revision, payload, updated) VALUES (?, ?, ?, ?)').bind(owner,previous.revision,previous.payload,previous.updated).run();
       const clean = {};
       for (const [key, value] of Object.entries(values)) {
         if (!/^airbnb_[a-zA-Z0-9_-]+$/.test(key) || typeof value !== 'string') return reply({ error: 'Invalid record' }, 400);

@@ -44,10 +44,12 @@ export const EditableCategoryCell: React.FC<EditableCategoryCellProps> = ({
 
   const [isForcedDropdown, setIsForcedDropdown] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const requestedFocus = useRef(false);
 
   // When switching to custom input mode, focus and select default text for instant editing
   useEffect(() => {
-    if (isCustom && !isForcedDropdown && inputRef.current) {
+    if (requestedFocus.current && isCustom && !isForcedDropdown && inputRef.current) {
+      requestedFocus.current = false;
       inputRef.current.focus();
       if (value === defaultOther) {
         inputRef.current.select();
@@ -96,6 +98,7 @@ export const EditableCategoryCell: React.FC<EditableCategoryCellProps> = ({
       value={standardList.includes(value as any) ? value : defaultOther}
       onChange={(e) => {
         const val = e.target.value;
+        requestedFocus.current = val === defaultOther;
         setIsForcedDropdown(false);
         onChange(val);
       }}

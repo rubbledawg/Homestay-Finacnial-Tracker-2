@@ -1,3 +1,4 @@
+import { bookingAmounts } from '../utils/accounting';
 import React, { useState, useEffect } from 'react';
 import { BookingItem, Partner } from '../types';
 import { formatPHP, parseAmount, generateId } from '../utils/formatters';
@@ -16,16 +17,12 @@ import { BookingCalendarModal } from './BookingCalendarModal';
 
 interface BookingsTableProps {
   monthId: string;
+  year?: number;
   items: BookingItem[];
   allYearBookings?: BookingItem[];
   partners?: Partner[];
   onChange: (items: BookingItem[]) => void;
 }
-
-const DEFAULT_PARTNERS: Partner[] = [
-  { id: 'p-1', name: 'Locsin', sharePercentage: 42.07 },
-  { id: 'p-2', name: 'Laspinas', sharePercentage: 57.93 },
-];
 
 const UNITS = ['Unit 1', 'Unit 2', 'Unit 3'];
 
@@ -116,6 +113,7 @@ function hasBookingConflict(booking: BookingItem, allBookings: BookingItem[]): b
 
 export const BookingsTable: React.FC<BookingsTableProps> = ({
   monthId,
+  year = new Date().getFullYear(),
   items,
   allYearBookings,
   partners,
@@ -126,11 +124,11 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
   const [activeCalendarBooking, setActiveCalendarBooking] = useState<BookingItem | null>(null);
   const [activeCalendarAnchor, setActiveCalendarAnchor] = useState<DOMRect | null>(null);
 
-  const partnerList = partners && partners.length > 0 ? partners : DEFAULT_PARTNERS;
+  const partnerList = partners || [];
 
   const defaultMonthIndex = MONTH_MAP[monthId.toLowerCase()] ?? new Date().getMonth();
 
-  const getMonthDefaultDates = (monthIndex: number, yearNum = 2026) => {
+  const getMonthDefaultDates = (monthIndex: number, yearNum = year) => {
     const checkIn = `${yearNum}-${String(monthIndex + 1).padStart(2, '0')}-01`;
     const nextMonthD = new Date(yearNum, monthIndex + 1, 1);
     const checkOut = `${nextMonthD.getFullYear()}-${String(nextMonthD.getMonth() + 1).padStart(2, '0')}-01`;
@@ -144,7 +142,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
     let initialNights: number | '' = '';
 
     if (tableRateMode === 'monthly') {
-      const fullMonth = getMonthDefaultDates(defaultMonthIndex, 2026);
+      const fullMonth = getMonthDefaultDates(defaultMonthIndex, year);
       initialDate = fullMonth.checkIn;
       initialCheckOut = fullMonth.checkOut;
       initialNights = fullMonth.nights;
@@ -165,7 +163,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
       discountValue: '',
       discountBy: '',
       netPayout: '',
-      status: 'Confirmed',
+      status: 'Pending Payout',
       notes: '',
     };
     onChange([...items, newBooking]);
@@ -197,7 +195,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
 
       const isShareholderDisc = isShareholderDiscount(next.discountBy, partnerList);
       const discPerNight = parseAmount(next.discount);
-      const effectiveDisc = isShareholderDisc ? 0 : discPerNight;
+      const effectiveDisc = discPerNight;
       const n = nights > 0 ? nights : 1;
       const effectiveNights = n >= 28 ? n : 30;
 
@@ -222,6 +220,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
         next.monthlyRate = Math.round((r * effectiveNights) * 100) / 100;
       }
 
+      next.netPayout = bookingAmounts({...next, netPayout: ''}).net;
       return next;
     });
     onChange(updated);
@@ -229,7 +228,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
 
   const handleSetTableRateMode = (mode: 'nightly' | 'monthly') => {
     setTableRateMode(mode);
-    const fullMonth = getMonthDefaultDates(defaultMonthIndex, 2026);
+    const fullMonth = getMonthDefaultDates(defaultMonthIndex, year);
 
     const updated = items.map((item) => {
       let itemDate = item.date;
@@ -271,7 +270,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
   };
 
   const handleToggleRowRateMode = (id: string) => {
-    const fullMonth = getMonthDefaultDates(defaultMonthIndex, 2026);
+    const fullMonth = getMonthDefaultDates(defaultMonthIndex, year);
 
     const updated = items.map((item) => {
       if (item.id !== id) return item;
@@ -363,7 +362,8 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
         if (rate > 0) {
           next.netPayout = Math.max(0, rate * validNights);
         }
-        return next;
+        next.netPayout = bookingAmounts({...next, netPayout: ''}).net;
+      return next;
       }
 
       const pct = parseFloat(rawVal);
@@ -377,7 +377,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
       if (rate > 0) {
         const discAmt = Math.round(((rate * validPct) / 100) * 100) / 100;
         next.discount = discAmt;
-        const effDiscAmt = isShareholderDisc ? 0 : discAmt;
+        const effDiscAmt = discAmt;
         next.netPayout = Math.max(0, (rate - effDiscAmt) * validNights);
       } else if (item.netPayout !== '' && item.netPayout !== undefined && validPct < 100) {
         const net = parseAmount(item.netPayout);
@@ -388,6 +388,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
         next.discount = discAmt;
       }
 
+      next.netPayout = bookingAmounts({...next, netPayout: ''}).net;
       return next;
     });
     onChange(updated);
@@ -404,7 +405,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
       const effectiveNights = validNights >= 28 ? validNights : 30;
       const discountPerNight = parseAmount(next.discount);
       const isShareholderDisc = isShareholderDiscount(field === 'discountBy' ? value : next.discountBy, partnerList);
-      const effectiveDiscountPerNight = isShareholderDisc ? 0 : discountPerNight;
+      const effectiveDiscountPerNight = discountPerNight;
 
       // Reactive calculations for Nightly Rate, Monthly Rate, Discount (₱/nt), and Net Payout
       if (field === 'discountBy') {
@@ -442,7 +443,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
           if (next.discountType === 'percent' && typeof next.discountValue === 'number' && next.discountValue > 0) {
             const discAmt = Math.round(((rate * next.discountValue) / 100) * 100) / 100;
             next.discount = discAmt;
-            const effDiscAmt = isShareholderDisc ? 0 : discAmt;
+            const effDiscAmt = discAmt;
             next.netPayout = Math.max(0, (rate - effDiscAmt) * validNights);
           } else {
             next.netPayout = Math.max(0, (rate - effectiveDiscountPerNight) * validNights);
@@ -470,7 +471,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
         next.discount = disc;
         next.discountType = 'amount';
         next.discountValue = '';
-        const effDisc = isShareholderDisc ? 0 : parseAmount(disc);
+        const effDisc = parseAmount(disc);
         const currentMode = next.rateMode || tableRateMode;
         if (currentMode === 'monthly' && next.monthlyRate !== '' && next.monthlyRate !== undefined) {
           const m = parseAmount(next.monthlyRate);
@@ -524,6 +525,9 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
         }
       }
 
+      if (field !== 'netPayout' && ['nightlyRate','monthlyRate','discount','discountBy','discountValue','nights','platformFee','grossPayout'].includes(field)) {
+        next.netPayout = bookingAmounts({...next,netPayout:''}).net;
+      }
       return next;
     });
     onChange(updated);
@@ -560,30 +564,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
       }
     }
 
-    let net = 0;
-    if (isShareholderDisc) {
-      if (item.rateMode === 'monthly' && item.monthlyRate !== '' && item.monthlyRate !== undefined) {
-        const m = parseAmount(item.monthlyRate);
-        net = n >= 28 ? m : (m / 30) * (n > 0 ? n : 1);
-      } else if (item.nightlyRate !== '' && item.nightlyRate !== undefined && n > 0) {
-        net = parseAmount(item.nightlyRate) * n;
-      } else if (item.grossPayout !== '' && item.grossPayout !== undefined) {
-        net = Math.max(0, parseAmount(item.grossPayout) - parseAmount(item.platformFee));
-      } else if (item.netPayout !== '' && item.netPayout !== undefined) {
-        net = parseAmount(item.netPayout);
-      }
-    } else {
-      if (item.netPayout !== '' && item.netPayout !== undefined) {
-        net = parseAmount(item.netPayout);
-      } else if (item.rateMode === 'monthly' && item.monthlyRate !== '' && item.monthlyRate !== undefined) {
-        const m = parseAmount(item.monthlyRate);
-        net = n >= 28 ? Math.max(0, m - bookingTotalDiscount) : Math.max(0, (m / 30 - discountPerNight) * (n > 0 ? n : 1));
-      } else if (item.nightlyRate !== '' && item.nightlyRate !== undefined && n > 0) {
-        net = Math.max(0, (parseAmount(item.nightlyRate) - discountPerNight) * n);
-      } else if (item.grossPayout !== '' && item.grossPayout !== undefined) {
-        net = Math.max(0, parseAmount(item.grossPayout) - parseAmount(item.platformFee) - bookingTotalDiscount);
-      }
-    }
+    const net = bookingAmounts(item).cash;
     totalNet += net;
 
     const nightly =
@@ -798,18 +779,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
                           : '');
 
                   const isShareholderDisc = isShareholderDiscount(item.discountBy, partnerList);
-                  const effectiveDiscForDisplay = isShareholderDisc ? 0 : discountPerNight;
-
-                  const displayNet =
-                    item.netPayout !== '' && item.netPayout !== undefined
-                      ? item.netPayout
-                      : rowRateMode === 'monthly' && calculatedMonthly > 0
-                      ? validNights >= 28
-                        ? Math.max(0, calculatedMonthly - (effectiveDiscForDisplay * validNights))
-                        : Math.max(0, ((calculatedMonthly / 30) - effectiveDiscForDisplay) * validNights)
-                      : calculatedNightly > 0 && n > 0
-                      ? Math.max(0, (calculatedNightly - effectiveDiscForDisplay) * n)
-                      : '';
+                  const displayNet = bookingAmounts(item).net;
 
                   const dateLabel = formatDateRange(item.date, item.checkOutDate);
                   const isConflict = hasBookingConflict(item, items);
@@ -955,9 +925,9 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
                           const pctVal = typeof item.discountValue === 'number' ? item.discountValue : parseFloat(item.discountValue || '0') || 0;
                           
                           const rowTooltip = isPercent && pctVal > 0
-                            ? `${pctVal}% discount on ₱${calculatedNightly > 0 ? calculatedNightly.toLocaleString() : '0'}/nt = ₱${discountPerNight.toLocaleString()}/nt × ${validNights} nts = ₱${rowTotalDiscount.toLocaleString()} total discount${item.discountBy ? ` (${isShareholderDisc ? `Shareholder: ${item.discountBy} - Repayable` : `Channel: ${item.discountBy}`})` : ''}`
+                            ? `${pctVal}% discount on ₱${calculatedNightly > 0 ? calculatedNightly.toLocaleString() : '0'}/nt = ₱${discountPerNight.toLocaleString()}/nt × ${validNights} nts = ₱${rowTotalDiscount.toLocaleString()} total discount${item.discountBy ? ` (${isShareholderDisc ? `Shareholder: ${item.discountBy} - verify actual payout` : `Channel: ${item.discountBy}`})` : ''}`
                             : discountPerNight > 0
-                            ? `${validNights} nts × ₱${discountPerNight.toLocaleString()}/nt = ₱${rowTotalDiscount.toLocaleString()} total discount${item.discountBy ? ` (${isShareholderDisc ? `Shareholder: ${item.discountBy} - Repayable` : `Channel: ${item.discountBy}`})` : ''}`
+                            ? `${validNights} nts × ₱${discountPerNight.toLocaleString()}/nt = ₱${rowTotalDiscount.toLocaleString()} total discount${item.discountBy ? ` (${isShareholderDisc ? `Shareholder: ${item.discountBy} - verify actual payout` : `Channel: ${item.discountBy}`})` : ''}`
                             : 'No discount applied';
 
                           return (
@@ -1217,7 +1187,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
                           <span className="text-[10px] font-mono flex items-center gap-1">
                             <span className="text-neutral-500 font-normal">(</span>
                             {totalShareholderDiscounts > 0 && (
-                              <span className="text-amber-400 font-semibold" title="Shareholder Discounts (Repayable)">
+                              <span className="text-amber-400 font-semibold" title="Partner discounts: verify actual payout">
                                 Sh: {formatPHP(totalShareholderDiscounts)}
                               </span>
                             )}
@@ -1267,7 +1237,7 @@ export const BookingsTable: React.FC<BookingsTableProps> = ({
           currentBookingId={activeCalendarBooking.id}
           allBookings={allYearBookings || items}
           anchorRect={activeCalendarAnchor}
-          defaultYear={2026}
+          defaultYear={year}
           defaultMonth={defaultMonthIndex}
           rateMode={activeCalendarBooking.rateMode || tableRateMode}
           onApply={(checkIn, checkOut, nights) => {

@@ -5,11 +5,13 @@ import { readFileSync } from 'node:fs';
 import worker from '../server/worker.mjs';
 test('private cloud ledger saves receipts, survives reads, rejects stale edits and unauthorized access',async()=>{
  const db=new DatabaseSync(':memory:'); db.exec(readFileSync(new URL('../drizzle/0000_ledger.sql',import.meta.url),'utf8'));
+ db.exec(readFileSync(new URL('../drizzle/0001_preserve_ledger_snapshots.sql',import.meta.url),'utf8'));
  const files=new Map();
  const env={DB:{prepare(sql){return {bind(...args){return {first:async()=>db.prepare(sql).get(...args),run:async()=>({meta:{changes:db.prepare(sql).run(...args).changes}})}}}}},BUCKET:{put:async(k,b,o)=>files.set(k,{body:b,...o}),get:async k=>files.get(k)}};
  const headers={'oai-authenticated-user-id':'owner-test','oai-authenticated-user-email':'alfonso.locsin@gmail.com','origin':'https://ledger.test','content-type':'application/json'};
  const req=(method='GET',body,extra={})=>new Request('https://ledger.test/api/ledger',{method,headers:{...headers,...extra},...(body?{body:JSON.stringify(body)}:{})});
  assert.equal((await worker.fetch(new Request('https://ledger.test/api/ledger'),env)).status,403);
+ assert.equal((await worker.fetch(new Request('https://ledger.test/'),env)).status,403);
  assert.equal((await worker.fetch(req('GET',null,{'oai-authenticated-user-email':'other@example.com'}),env)).status,403);
  assert.deepEqual(await (await worker.fetch(req(),env)).json(),{revision:0,values:{}});
  const values={airbnb_data:JSON.stringify({amount:120,receipt:'data:image/png;base64,aGVsbG8='})};
@@ -22,5 +24,22 @@ test('private cloud ledger saves receipts, survives reads, rejects stale edits a
  const receipt=JSON.parse(saved.values.airbnb_data).receipt;
  assert.equal(await (await worker.fetch(new Request('https://ledger.test'+receipt,{headers}),env)).text(),'hello');
  assert.equal((await worker.fetch(new Request('https://ledger.test'+receipt),env)).status,403);
+ assert.equal(db.prepare('SELECT count(*) AS n FROM ledger_snapshots').get().n,1);
+ assert.equal(JSON.parse(db.prepare('SELECT payload FROM ledger_snapshots').get().payload).airbnb_data,saved.values.airbnb_data);
+ const upgraded={...saved.values,airbnb_accounting_version:'2'};
+ assert.equal((await worker.fetch(req('PUT',{revision:2,values:upgraded}),env)).status,200);
+ assert.equal((await worker.fetch(req('PUT',{revision:3,values:saved.values}),env)).status,409);
+ assert.equal(db.prepare('SELECT revision FROM ledger').get().revision,3);
+ db.close();
+});
+
+test('snapshot migration preserves every pre-existing ledger payload verbatim',()=>{
+ const db=new DatabaseSync(':memory:');
+ db.exec(readFileSync(new URL('../drizzle/0000_ledger.sql',import.meta.url),'utf8'));
+ const original=JSON.stringify({airbnb_original:'{"receipt":"original","outflow":24220}'});
+ db.prepare('INSERT INTO ledger (owner,revision,payload,updated) VALUES (?,?,?,?)').run('owner',15,original,'original-date');
+ db.exec(readFileSync(new URL('../drizzle/0001_preserve_ledger_snapshots.sql',import.meta.url),'utf8'));
+ assert.equal(db.prepare('SELECT payload FROM ledger_snapshots').get().payload,original);
+ assert.equal(db.prepare('SELECT payload FROM ledger').get().payload,original);
  db.close();
 });

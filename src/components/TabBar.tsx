@@ -67,10 +67,7 @@ export const TabBar: React.FC<TabBarProps> = ({
             onChange={(e) => onYearChange(parseInt(e.target.value))}
             className="bg-transparent text-neutral-200 font-semibold focus:outline-none cursor-pointer text-xs pr-4 appearance-none"
           >
-            <option value={2024} className="bg-neutral-900 text-neutral-200">2024</option>
-            <option value={2025} className="bg-neutral-900 text-neutral-200">2025</option>
-            <option value={2026} className="bg-neutral-900 text-neutral-200">2026</option>
-            <option value={2027} className="bg-neutral-900 text-neutral-200">2027</option>
+            {Array.from(new Set([year, ...Array.from({length:9},(_,i)=>new Date().getFullYear()-4+i), ...monthsData.map(m=>m.year)])).sort((a,b)=>a-b).map(y=><option key={y} value={y}>{y}</option>)}
           </select>
           <ChevronDown className="w-3 h-3 text-neutral-400 absolute right-2 pointer-events-none" />
         </div>
