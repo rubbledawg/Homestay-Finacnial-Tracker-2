@@ -1,0 +1,33 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Reusable helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated()
+        && request.auth.uid == userId
+        && request.auth.token.email == 'alfonso.locsin@gmail.com'
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
+    // Match user document and all subcollections
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /{allSubcollections=**} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

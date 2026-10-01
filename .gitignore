@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+ui-dist/
+release-dist/
+.sites-runtime/
+*.tar.gz
+financial_backup*

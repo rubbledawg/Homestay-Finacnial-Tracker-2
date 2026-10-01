@@ -1,0 +1,12 @@
+import { generateSQLiteDrizzleJson, generateSQLiteMigration } from 'drizzle-kit/api';
+import * as schema from './db/schema.ts';
+import { mkdirSync,writeFileSync,existsSync } from 'node:fs';
+if(existsSync('drizzle/0000_ledger.sql')) throw new Error('Initial migration already exists; generate a new migration for schema changes.');
+const empty=await generateSQLiteDrizzleJson({});
+const current=await generateSQLiteDrizzleJson(schema,empty.id);
+const sql=await generateSQLiteMigration(empty,current);
+mkdirSync('drizzle/meta',{recursive:true});
+writeFileSync('drizzle/0000_ledger.sql',sql.join('\n--> statement-breakpoint\n'));
+writeFileSync('drizzle/meta/0000_snapshot.json',JSON.stringify(current,null,2));
+writeFileSync('drizzle/meta/_journal.json',JSON.stringify({version:'7',dialect:'sqlite',entries:[{idx:0,version:'6',when:Date.now(),tag:'0000_ledger',breakpoints:true}]},null,2));
+console.log(sql.join('\n'));

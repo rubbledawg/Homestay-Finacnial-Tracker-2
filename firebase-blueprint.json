@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user profile and ownership information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "lastLoginAt": { "type": "number" }
+      },
+      "required": ["uid", "email"]
+    },
+    "BusinessTracker": {
+      "title": "BusinessTracker",
+      "description": "A business or rental property tracker venture",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "currency": { "type": "string" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "ownerId": { "type": "string" }
+      },
+      "required": ["id", "name", "currency", "ownerId"]
+    },
+    "Partner": {
+      "title": "Partner",
+      "description": "A shareholder or partner in a business tracker",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "sharePercentage": { "type": "number" }
+      },
+      "required": ["id", "name", "sharePercentage"]
+    },
+    "YearlyMonthData": {
+      "title": "YearlyMonthData",
+      "description": "Monthly financial ledger, bookings, and pre-funding state for a specific year and month",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "monthId": { "type": "string" },
+        "year": { "type": "number" },
+        "name": { "type": "string" },
+        "preFunding": { "type": "number" },
+        "initialCapital": { "type": "number" },
+        "isInitialMonth": { "type": "boolean" },
+        "bookings": { "type": "array" },
+        "ledger": { "type": "array" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "monthId", "year"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Stores user profile records"
+    },
+    "/users/{userId}/businesses/{businessId}": {
+      "schema": "BusinessTracker",
+      "description": "Stores business ventures owned by the user"
+    },
+    "/users/{userId}/businesses/{businessId}/partners/{partnerId}": {
+      "schema": "Partner",
+      "description": "Stores partner equity allocations for a business"
+    },
+    "/users/{userId}/businesses/{businessId}/years/{yearId}": {
+      "schema": "YearlyMonthData",
+      "description": "Stores all month data and ledgers for a business tracker in a given year"
+    }
+  }
+}

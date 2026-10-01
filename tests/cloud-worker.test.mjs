@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import { readFileSync } from 'node:fs';
+import worker from '../server/worker.mjs';
+test('private cloud ledger saves receipts, survives reads, rejects stale edits and unauthorized access',async()=>{
+ const db=new DatabaseSync(':memory:'); db.exec(readFileSync(new URL('../drizzle/0000_ledger.sql',import.meta.url),'utf8'));
+ const files=new Map();
+ const env={DB:{prepare(sql){return {bind(...args){return {first:async()=>db.prepare(sql).get(...args),run:async()=>({meta:{changes:db.prepare(sql).run(...args).changes}})}}}}},BUCKET:{put:async(k,b,o)=>files.set(k,{body:b,...o}),get:async k=>files.get(k)}};
+ const headers={'oai-authenticated-user-id':'owner-test','oai-authenticated-user-email':'alfonso.locsin@gmail.com','origin':'https://ledger.test','content-type':'application/json'};
+ const req=(method='GET',body,extra={})=>new Request('https://ledger.test/api/ledger',{method,headers:{...headers,...extra},...(body?{body:JSON.stringify(body)}:{})});
+ assert.equal((await worker.fetch(new Request('https://ledger.test/api/ledger'),env)).status,403);
+ assert.equal((await worker.fetch(req('GET',null,{'oai-authenticated-user-email':'other@example.com'}),env)).status,403);
+ assert.deepEqual(await (await worker.fetch(req(),env)).json(),{revision:0,values:{}});
+ const values={airbnb_data:JSON.stringify({amount:120,receipt:'data:image/png;base64,aGVsbG8='})};
+ assert.equal((await worker.fetch(req('PUT',{revision:0,values},{origin:'https://evil.test'}),env)).status,403);
+ let response=await worker.fetch(req('PUT',{revision:0,values}),env);assert.equal(response.status,200);
+ const saved=await response.json();assert.equal(saved.revision,1);assert.equal(files.size,1);
+ assert.deepEqual(await (await worker.fetch(req(),env)).json(),saved);
+ assert.equal((await worker.fetch(req('PUT',{revision:0,values}),env)).status,409);
+ assert.equal((await worker.fetch(req('PUT',{revision:1,values:saved.values}),env)).status,200);
+ const receipt=JSON.parse(saved.values.airbnb_data).receipt;
+ assert.equal(await (await worker.fetch(new Request('https://ledger.test'+receipt,{headers}),env)).text(),'hello');
+ assert.equal((await worker.fetch(new Request('https://ledger.test'+receipt),env)).status,403);
+ db.close();
+});

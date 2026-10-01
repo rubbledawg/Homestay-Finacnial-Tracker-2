@@ -1,0 +1,8 @@
+{
+  "name": "Remix Airbnb Financial Tracker 2",
+  "description": "A sleek, compact dark-themed Airbnb financial tracker for monitoring income, maintenance expenses, and net profit with monthly roll-over calculations, hideable tabs, and export to CSV, JPEG, or PDF in Philippine pesos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
